@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "description": "AI-powered interview platform backend",
   "type": "module",
-  "main": "server.js",
+  "main": "app.js",
   "scripts": {
-    "start": "node Backend/server.js",
-    "dev": "nodemon Backend/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "start": "node Backend/app.js",
+  "dev": "nodemon Backend/app.js",
+  "test": "echo \"Error: no test specified\" && exit 1"
+},
   "keywords": [
     "ai",
     "interview",
