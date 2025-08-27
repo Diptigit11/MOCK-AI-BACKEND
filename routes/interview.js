@@ -1,3 +1,6 @@
+import express from "express";
+import multer from "multer";
+import { generateFeedback, getSavedFeedback } from "../controllers/feedbackController.js";
 import { upload } from "../middleware/upload.js";
 import { generateQuestions, saveSession, getFeedback } from "../controllers/interviewController.js";
 
@@ -10,4 +13,9 @@ export function interviewRoutes(app) {
 
   // Get interview feedback (placeholder for future AI analysis)
   app.post("/api/get-feedback", getFeedback);
+  // Generate detailed feedback for interview answers
+app.post("/api/generate-feedback", generateFeedback);
+
+// Get saved feedback by session ID
+app.get("/api/feedback/:sessionId", getSavedFeedback);
 }
