@@ -55,7 +55,6 @@ Required JSON format:
 
 Generate the questions now:`;
 }
-// Add this function to your existing promptGenerator.js file
 
 export function generateFeedbackPrompt(options) {
   const { question, answer, sessionData } = options;

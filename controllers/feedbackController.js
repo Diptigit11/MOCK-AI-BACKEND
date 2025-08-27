@@ -2,7 +2,6 @@ import { initializeGemini } from "../services/geminiService.js";
 import { generateFeedbackPrompt } from "../utils/promptGenerator.js";
 import { getFallbackFeedback, validateAndFixFeedback } from "../utils/feedbackUtils.js";
 
-// Generate detailed feedback for interview answers
 export async function generateFeedback(req, res) {
   console.log("=== Generate Feedback Request ===");
   console.log("Body:", req.body);

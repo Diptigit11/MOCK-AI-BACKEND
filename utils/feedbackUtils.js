@@ -1,7 +1,4 @@
-// Utility functions for feedback processing
-
 export function validateAndFixFeedback(feedback, question, answer) {
-  // Ensure required fields exist
   const validatedFeedback = {
     score: feedback.score || 60,
     assessment: feedback.assessment || "Assessment not available",
@@ -12,11 +9,9 @@ export function validateAndFixFeedback(feedback, question, answer) {
     missedOpportunities: Array.isArray(feedback.missedOpportunities) ? feedback.missedOpportunities : [],
   };
 
-  // Validate score range
   if (validatedFeedback.score < 0) validatedFeedback.score = 0;
   if (validatedFeedback.score > 100) validatedFeedback.score = 100;
 
-  // Ensure arrays don't exceed reasonable limits
   validatedFeedback.strengths = validatedFeedback.strengths.slice(0, 5);
   validatedFeedback.improvements = validatedFeedback.improvements.slice(0, 5);
   validatedFeedback.suggestions = validatedFeedback.suggestions.slice(0, 5);

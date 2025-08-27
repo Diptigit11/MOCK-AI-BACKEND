@@ -1,5 +1,3 @@
-import express from "express";
-import multer from "multer";
 import { generateFeedback, getSavedFeedback } from "../controllers/feedbackController.js";
 import { upload } from "../middleware/upload.js";
 import { generateQuestions, saveSession, getFeedback } from "../controllers/interviewController.js";
