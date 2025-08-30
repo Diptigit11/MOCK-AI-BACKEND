@@ -4,13 +4,28 @@ import { getFallbackFeedback, validateAndFixFeedback } from "../utils/feedbackUt
 
 export async function generateFeedback(req, res) {
   console.log("=== Generate Feedback Request ===");
-  console.log("Body:", req.body);
-
+    console.log("Raw request body:", JSON.stringify(req.body, null, 2));
+  
+  const { answers, questions, metadata } = req.body;
+  
+  // Log each answer to see transcript data
+  answers.forEach((answer, index) => {
+    console.log(`Answer ${index + 1}:`, {
+      questionId: answer.questionId,
+      hasTranscription: !!answer.transcription,
+      transcriptionType: typeof answer.transcription,
+      transcriptionPreview: answer.transcription ? 
+        (typeof answer.transcription === 'string' ? 
+          answer.transcription.substring(0, 100) : 
+          JSON.stringify(answer.transcription).substring(0, 100)) : 'None'
+    });
+  });
   try {
     const { 
       sessionData,
       answers,
-      questions
+      questions,
+      metadata
     } = req.body;
 
     // Validation
@@ -77,13 +92,26 @@ export async function generateFeedback(req, res) {
           feedback = getFallbackFeedback(question, answer);
         }
 
+        // Map to frontend expected format
         feedbackResults.push({
           questionId: question.id,
           questionText: question.text,
-          questionType: question.type,
-          difficulty: question.difficulty,
-          coding: question.coding,
-          ...feedback
+          questionType: question.type || 'general',
+          difficulty: question.difficulty || 'medium',
+          coding: question.coding || false,
+          score: feedback.score || 60,
+          wasAnswered: !answer.skipped,
+          hasTranscript: !!(answer.transcription && answer.transcription.text),
+          transcription: answer.transcription || null,
+          transcriptWordCount: answer.transcription ? 
+            (answer.transcription.text ? answer.transcription.text.split(/\s+/).length : 0) : 0,
+          detailedFeedback: feedback.assessment || '',
+          strengths: feedback.strengths || [],
+          improvements: feedback.improvements || [],
+          communicationScore: feedback.communicationScore || feedback.score || 60,
+          technicalScore: feedback.technicalScore || null,
+          completeness: feedback.completeness || feedback.score || 60,
+          clarity: feedback.clarity || null
         });
 
         overallScores.push(feedback.score || 60);
@@ -96,9 +124,21 @@ export async function generateFeedback(req, res) {
         feedbackResults.push({
           questionId: question.id,
           questionText: question.text,
-          questionType: question.type,
-          difficulty: question.difficulty,
-          coding: question.coding,
+          questionType: question.type || 'general',
+          difficulty: question.difficulty || 'medium',
+          coding: question.coding || false,
+          score: 60,
+          wasAnswered: !answer.skipped,
+          hasTranscript: false,
+          transcription: null,
+          transcriptWordCount: 0,
+          detailedFeedback: 'Unable to generate detailed feedback for this question.',
+          strengths: [],
+          improvements: ['Consider providing more detailed responses'],
+          communicationScore: 60,
+          technicalScore: null,
+          completeness: 60,
+          clarity: null,
           ...fallbackFeedback
         });
         overallScores.push(60);
@@ -108,50 +148,108 @@ export async function generateFeedback(req, res) {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // Calculate overall statistics
+    // Calculate metrics
+    const answeredQuestions = answers.filter(a => !a.skipped);
+    const completionRate = Math.round((answeredQuestions.length / questions.length) * 100);
     const averageScore = Math.round(
       overallScores.reduce((sum, score) => sum + score, 0) / overallScores.length
     );
 
-    const strengths = [];
-    const improvements = [];
+    // Helper function to calculate grade
+    const calculateGrade = (score) => {
+      if (score >= 90) return 'A+';
+      if (score >= 85) return 'A';
+      if (score >= 80) return 'A-';
+      if (score >= 75) return 'B+';
+      if (score >= 70) return 'B';
+      if (score >= 65) return 'B-';
+      if (score >= 60) return 'C+';
+      if (score >= 55) return 'C';
+      if (score >= 50) return 'C-';
+      return 'D';
+    };
+
+    // Collect strengths and improvements
+    const allStrengths = [];
+    const allImprovements = [];
     const strongAreas = [];
     const weakAreas = [];
 
     feedbackResults.forEach(fb => {
       if (fb.score >= 80) {
-        strengths.push(...(fb.strengths || []));
+        allStrengths.push(...(fb.strengths || []));
         strongAreas.push(fb.questionType);
       } else if (fb.score < 65) {
-        improvements.push(...(fb.improvements || []));
+        allImprovements.push(...(fb.improvements || []));
         weakAreas.push(fb.questionType);
       }
     });
 
     // Remove duplicates and limit
-    const uniqueStrengths = [...new Set(strengths)].slice(0, 5);
-    const uniqueImprovements = [...new Set(improvements)].slice(0, 5);
-    const uniqueStrongAreas = [...new Set(strongAreas)];
-    const uniqueWeakAreas = [...new Set(weakAreas)];
+    const uniqueStrengths = [...new Set(allStrengths)].slice(0, 5);
+    const uniqueImprovements = [...new Set(allImprovements)].slice(0, 5);
 
-    const overallFeedback = {
+    // Calculate communication metrics
+    const questionsWithTranscripts = feedbackResults.filter(f => f.hasTranscript).length;
+    const totalWordsSpoken = feedbackResults.reduce((sum, f) => sum + (f.transcriptWordCount || 0), 0);
+    const averageWordsPerResponse = questionsWithTranscripts > 0 ? 
+      Math.round(totalWordsSpoken / questionsWithTranscripts) : 0;
+
+    // Generate recommendations and next steps
+    const recommendations = generateRecommendations(feedbackResults, averageScore);
+    const nextSteps = generateNextSteps(feedbackResults, averageScore);
+
+    // Calculate category performance
+    const categoryPerformance = calculateCategoryPerformance(feedbackResults, questions);
+
+    // Format response to match frontend expectations
+    const feedbackResponse = {
       overallScore: averageScore,
-      totalQuestions: feedbackResults.length,
-      answeredQuestions: answers.filter(a => !a.skipped).length,
-      skippedQuestions: answers.filter(a => a.skipped).length,
-      codingQuestions: feedbackResults.filter(fb => fb.coding).length,
-      averageTimePerQuestion: sessionData?.averageTimePerQuestion || 0,
-      strengths: uniqueStrengths,
-      improvements: uniqueImprovements,
-      strongAreas: uniqueStrongAreas,
-      weakAreas: uniqueWeakAreas,
-      scoreDistribution: {
-        excellent: feedbackResults.filter(fb => fb.score >= 90).length,
-        good: feedbackResults.filter(fb => fb.score >= 75 && fb.score < 90).length,
-        average: feedbackResults.filter(fb => fb.score >= 60 && fb.score < 75).length,
-        needsImprovement: feedbackResults.filter(fb => fb.score < 60).length
+      overallGrade: calculateGrade(averageScore),
+      completionRate,
+      generatedAt: new Date().toISOString(),
+      
+      metrics: {
+        questionsAnswered: answeredQuestions.length,
+        totalQuestions: questions.length,
+        averageCommunicationScore: Math.round(
+          feedbackResults.reduce((sum, f) => sum + (f.communicationScore || 0), 0) / feedbackResults.length
+        ),
+        averageTechnicalScore: feedbackResults.some(f => f.technicalScore) ? 
+          Math.round(feedbackResults
+            .filter(f => f.technicalScore)
+            .reduce((sum, f) => sum + f.technicalScore, 0) / 
+            feedbackResults.filter(f => f.technicalScore).length) : null,
+        totalWordsSpoken,
+        averageWordsPerResponse,
+        questionsWithTranscripts
       },
-      detailedFeedback: feedbackResults
+
+      overallStrengths: uniqueStrengths.length > 0 ? uniqueStrengths : [
+        'Completed the interview process',
+        'Demonstrated engagement with the questions'
+      ],
+      
+      overallImprovements: uniqueImprovements.length > 0 ? uniqueImprovements : [
+        'Focus on providing more detailed responses',
+        'Practice explaining technical concepts clearly'
+      ],
+
+      recommendations,
+      nextSteps,
+      questionFeedbacks: feedbackResults,
+      categoryPerformance,
+      
+      communicationAnalysis: questionsWithTranscripts > 0 ? {
+        totalWordsSpoken,
+        averageWordsPerResponse,
+        communicationPatterns: {
+          brevity: averageWordsPerResponse < 50 ? 'concise' : averageWordsPerResponse > 150 ? 'detailed' : 'balanced',
+          technicalLanguageUse: 'moderate'
+        }
+      } : null,
+
+      interviewMetadata: metadata || {}
     };
 
     console.log(`Generated feedback for ${feedbackResults.length} questions`);
@@ -159,8 +257,7 @@ export async function generateFeedback(req, res) {
 
     res.json({ 
       success: true,
-      feedback: overallFeedback,
-      generatedAt: new Date().toISOString()
+      feedback: feedbackResponse
     });
 
   } catch (error) {
@@ -171,6 +268,100 @@ export async function generateFeedback(req, res) {
       suggestion: "Please check your Gemini API key and try again"
     });
   }
+}
+
+// Helper function to generate recommendations
+function generateRecommendations(feedbackResults, averageScore) {
+  const recommendations = [];
+  
+  if (averageScore < 60) {
+    recommendations.push('Focus on understanding fundamental concepts before moving to advanced topics');
+    recommendations.push('Practice explaining your thought process step by step');
+    recommendations.push('Take time to think through questions before responding');
+  } else if (averageScore < 75) {
+    recommendations.push('Work on providing more comprehensive answers with examples');
+    recommendations.push('Practice technical interview questions regularly');
+    recommendations.push('Focus on explaining the reasoning behind your solutions');
+  } else if (averageScore < 85) {
+    recommendations.push('Continue practicing advanced scenarios and edge cases');
+    recommendations.push('Work on optimizing your solutions and discussing trade-offs');
+    recommendations.push('Practice explaining complex concepts in simple terms');
+  } else {
+    recommendations.push('Maintain your strong performance with continued practice');
+    recommendations.push('Focus on leadership and system design questions');
+    recommendations.push('Consider mentoring others to reinforce your knowledge');
+  }
+
+  // Add specific recommendations based on question types
+  const codingQuestions = feedbackResults.filter(f => f.coding);
+  if (codingQuestions.length > 0) {
+    const avgCodingScore = codingQuestions.reduce((sum, f) => sum + f.score, 0) / codingQuestions.length;
+    if (avgCodingScore < 70) {
+      recommendations.push('Practice more coding problems on platforms like LeetCode or HackerRank');
+      recommendations.push('Focus on understanding time and space complexity');
+    }
+  }
+
+  return recommendations.slice(0, 5);
+}
+
+// Helper function to generate next steps
+function generateNextSteps(feedbackResults, averageScore) {
+  const nextSteps = [
+    'Review the detailed feedback for each question',
+    'Practice the areas identified for improvement',
+    'Take another mock interview to track progress'
+  ];
+
+  if (averageScore < 70) {
+    nextSteps.push('Study fundamental concepts in your field');
+    nextSteps.push('Practice basic interview questions daily');
+  } else {
+    nextSteps.push('Practice advanced interview scenarios');
+    nextSteps.push('Focus on system design and architectural questions');
+  }
+
+  return nextSteps.slice(0, 4);
+}
+
+// Helper function to calculate category performance
+function calculateCategoryPerformance(feedbackResults, questions) {
+  const categories = {};
+  
+  feedbackResults.forEach(feedback => {
+    const category = feedback.questionType || 'general';
+    if (!categories[category]) {
+      categories[category] = {
+        totalQuestions: 0,
+        questionsAnswered: 0,
+        scores: [],
+        transcriptAvailable: 0,
+        totalWordsSpoken: 0
+      };
+    }
+    
+    categories[category].totalQuestions++;
+    if (feedback.wasAnswered) {
+      categories[category].questionsAnswered++;
+      categories[category].scores.push(feedback.score);
+    }
+    if (feedback.hasTranscript) {
+      categories[category].transcriptAvailable++;
+      categories[category].totalWordsSpoken += feedback.transcriptWordCount || 0;
+    }
+  });
+
+  // Calculate averages and completion rates
+  Object.keys(categories).forEach(category => {
+    const cat = categories[category];
+    cat.averageScore = cat.scores.length > 0 ? 
+      Math.round(cat.scores.reduce((sum, score) => sum + score, 0) / cat.scores.length) : 0;
+    cat.completionRate = Math.round((cat.questionsAnswered / cat.totalQuestions) * 100);
+    cat.averageWordsSpoken = cat.transcriptAvailable > 0 ? 
+      Math.round(cat.totalWordsSpoken / cat.transcriptAvailable) : 0;
+  });
+
+  return categories;
 }
 
 // Get saved feedback (if implemented with database)
