@@ -192,9 +192,15 @@ export async function generateFeedback(req, res) {
           improvements: feedback.improvements || []
         };
 
-        feedbackResults.push(newFormatFeedback);
+  feedbackResults.push(newFormatFeedback);
         detailedFeedbackArray.push(oldFormatFeedback);
-        overallScores.push(feedback.score || 60);
+        
+        // Include score for answered questions, 0 for skipped
+        if (answer.skipped) {
+          overallScores.push(0); // Skipped = 0 points
+        } else {
+          overallScores.push(feedback.score || 60);
+        }
 
       } catch (error) {
         console.error(`Error generating feedback for question ${question.id}:`, error);
@@ -247,9 +253,15 @@ export async function generateFeedback(req, res) {
           improvements: ['Consider providing more detailed responses']
         };
 
-        feedbackResults.push(newFormatFallback);
+         feedbackResults.push(newFormatFallback);
         detailedFeedbackArray.push(oldFormatFallback);
-        overallScores.push(60);
+        
+        // Include score for answered questions, 0 for skipped
+        if (answer.skipped) {
+          overallScores.push(0); // Skipped = 0 points
+        } else {
+          overallScores.push(60);
+        }
       }
 
       // Add delay to avoid rate limiting
@@ -258,10 +270,11 @@ export async function generateFeedback(req, res) {
 
     // Calculate metrics
     const answeredQuestions = answers.filter(a => !a.skipped);
-    const completionRate = Math.round((answeredQuestions.length / questions.length) * 100);
+   const completionRate = Math.round((answeredQuestions.length / questions.length) * 100);
     const averageScore = Math.round(
       overallScores.reduce((sum, score) => sum + score, 0) / overallScores.length
-    );
+    ); // This now correctly includes 0 for skipped questions
+
 
     // Helper function to calculate grade
     const calculateGrade = (score) => {
